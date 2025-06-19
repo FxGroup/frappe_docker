@@ -1,0 +1,10 @@
+https://github.com/FxGroup/erpnext.git#version-15-development
+https://github.com/FxGroup/hrms.git#version-15-development
+https://github.com/frappe/lms.git#develop
+https://github.com/FxGroup/FxNmRnTh.git#develop-v15
+https://github.com/FxGroup/Australia.git#develop-v15
+https://github.com/FxGroup/NewZealand.git#develop-v15
+https://github.com/FxGroup/FX.git#develop-v15
+https://github.com/FxGroup/RN.git#develop-v15
+https://github.com/FxGroup/NM.git#develop-v15
+https://github.com/FxGroup/Th.git#develop-v15

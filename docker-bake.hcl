@@ -6,10 +6,10 @@ variable "REGISTRY_USER" {
 }
 
 variable PYTHON_VERSION {
-    default = "3.11.6"
+    default = "3.10.13"
 }
 variable NODE_VERSION {
-    default = "18.18.2"
+    default = "20.18.0"
 }
 
 variable "FRAPPE_VERSION" {
@@ -91,8 +91,8 @@ target "default-args" {
 target "erpnext" {
     inherits = ["default-args"]
     context = "."
-    dockerfile = "images/production/Containerfile"
-    target = "erpnext"
+    dockerfile = "images/custom/Containerfile"
+    target = "backend"
     tags = tag("erpnext", "${ERPNEXT_VERSION}")
 }
 

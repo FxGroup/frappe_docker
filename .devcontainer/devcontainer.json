@@ -1,0 +1,21 @@
+// .devcontainer/devcontainer.json
+{
+    "name": "Frappe Dev Container",
+    "dockerComposeFile": ["../compose.yaml"],
+    "service": "backend",
+    "workspaceFolder": "/home/frappe/frappe-bench",
+    "shutdownAction": "stopCompose",
+    "forwardPorts": [8000, 8081, 8082, 8083, 8084, 9000],
+    "postCreateCommand": "docker compose up -d db redis-cache redis-queue && docker compose up configurator",
+    "remoteEnv": {
+      "DB_HOST": "db",
+      "DB_PORT": "3306",
+      "REDIS_CACHE": "redis-cache:6379",
+      "REDIS_QUEUE": "redis-queue:6379",
+      "SOCKETIO_PORT": "9000",
+      "ADMIN_PASSWORD": "Admin123",
+      "MYSQL_ROOT_PASSWORD": "root"
+    },
+    "runServices": ["db", "redis-cache", "redis-queue", "configurator"]
+  }
+  

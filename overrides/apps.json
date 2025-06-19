@@ -1,0 +1,19 @@
+[
+    {
+      "site": "fxmed.local",
+      "apps": ["frappe", "erpnext", "hrms", "FxNmRnTh", "NewZealand", "FX"]
+    },
+    {
+      "site": "naturalmeds.local",
+      "apps": ["frappe", "erpnext", "hrms", "FxNmRnTh", "NewZealand", "NM"]
+    },
+    {
+      "site": "rnlabs.local",
+      "apps": ["frappe", "erpnext", "hrms", "FxNmRnTh", "Australia","RN"]
+    },
+    {
+      "site": "therahealth.local",
+      "apps": ["frappe", "erpnext", "hrms", "lms", "FxNmRnTh", "Australia", "TH"]
+    }
+  ]
+  
