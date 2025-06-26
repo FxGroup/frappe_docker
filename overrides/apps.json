@@ -1,19 +1,19 @@
 [
     {
       "site": "fxmed.local",
-      "apps": ["frappe", "erpnext", "hrms", "FxNmRnTh", "NewZealand", "FX"]
+      "apps": ["erpnext", "hrms", "fxnmrnth", "newzealand", "fx"]
     },
     {
       "site": "naturalmeds.local",
-      "apps": ["frappe", "erpnext", "hrms", "FxNmRnTh", "NewZealand", "NM"]
+      "apps": ["erpnext", "hrms", "fxnmrnth", "newzealand", "nm"]
     },
     {
       "site": "rnlabs.local",
-      "apps": ["frappe", "erpnext", "hrms", "FxNmRnTh", "Australia","RN"]
+      "apps": ["erpnext", "hrms", "fxnmrnth", "australia","rn"]
     },
     {
       "site": "therahealth.local",
-      "apps": ["frappe", "erpnext", "hrms", "lms", "FxNmRnTh", "Australia", "TH"]
+      "apps": ["erpnext", "hrms", "fxnmrnth", "australia", "th"]
     }
   ]
   

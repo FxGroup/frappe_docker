@@ -1,135 +1,208 @@
 # syntax = docker/dockerfile:1.2
 
-# ────────────────────────────────────────
-# Base image: Python + system deps + Nginx + NVM + wkhtmltopdf
-# ────────────────────────────────────────
-ARG PYTHON_VERSION=3.10.13
-ARG DEBIAN_BASE=bookworm
+# ================================================================================================
+# Frappe Framework Multi-stage Docker Build with Interactive Support
+# ================================================================================================
+
+# ────────────────────────────────────────────────────────────────────────────────────────────
+# Build Arguments - Define these in your .env file
+# ────────────────────────────────────────────────────────────────────────────────────────────
+ARG PYTHON_VERSION
+ARG DEBIAN_BASE
+ARG NODE_VERSION
+ARG WKHTMLTOPDF_VERSION
+ARG WKHTMLTOPDF_DISTRO
+ARG FRAPPE_VERSION
+ARG FRAPPE_PATH
+ARG ERPNEXT_VERSION
+ARG ERPNEXT_PATH
+ARG DEFAULT_VERSION
+ARG GITHUB_TOKEN
+
+# ────────────────────────────────────────────────────────────────────────────────────────────
+# Stage 1: Base Image - System Dependencies & Runtime Setup
+# ────────────────────────────────────────────────────────────────────────────────────────────
 FROM python:${PYTHON_VERSION}-slim-${DEBIAN_BASE} AS base
 
-COPY resources/nginx-template.conf /templates/nginx/frappe.conf.template
-COPY resources/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
+# Re-declare ARGs needed in this stage (ARGs don't persist across FROM)
+ARG NODE_VERSION
+ARG WKHTMLTOPDF_VERSION
+ARG WKHTMLTOPDF_DISTRO
 
-ARG WKHTMLTOPDF_VERSION=0.12.6.1-3
-ARG WKHTMLTOPDF_DISTRO=bookworm
-ARG NODE_VERSION=20.18.0
+# Copy configuration templates
+COPY overrides/nginx-template.conf /templates/nginx/frappe.conf.template
+COPY overrides/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
 
+RUN chmod +x /usr/local/bin/nginx-entrypoint.sh
+
+# Environment variables
 ENV NVM_DIR=/home/frappe/.nvm
 ENV PATH=${NVM_DIR}/versions/node/v${NODE_VERSION}/bin/:${PATH}
 
-RUN useradd -ms /bin/bash frappe \
-    && apt-get update \
-    && apt-get install --no-install-recommends -y \
-       wget curl git vim nginx gettext-base file \
-       libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libpangocairo-1.0-0 \
-       restic gpg mariadb-client less \
-       libpq-dev postgresql-client \
-       wait-for-it jq \
-    && mkdir -p ${NVM_DIR} \
-    && curl -sL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash \
-    && . ${NVM_DIR}/nvm.sh \
-    && nvm install ${NODE_VERSION} \
-    && nvm use v${NODE_VERSION} \
-    && npm install -g yarn \
-    && nvm alias default v${NODE_VERSION} \
-    && rm -rf ${NVM_DIR}/.cache \
-    && echo 'export NVM_DIR="/home/frappe/.nvm"' >> /home/frappe/.bashrc \
-    && echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /home/frappe/.bashrc \
-    && echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> /home/frappe/.bashrc \
-    # wkhtmltopdf
-    && if [ "$(uname -m)" = "aarch64" ]; then export ARCH=arm64; else export ARCH=amd64; fi \
-    && wget -q https://github.com/wkhtmltopdf/packaging/releases/download/${WKHTMLTOPDF_VERSION}/wkhtmltox_${WKHTMLTOPDF_VERSION}.${WKHTMLTOPDF_DISTRO}_${ARCH}.deb \
-    && apt-get install -y ./wkhtmltox_${WKHTMLTOPDF_VERSION}.${WKHTMLTOPDF_DISTRO}_${ARCH}.deb \
-    && rm wkhtmltox_${WKHTMLTOPDF_VERSION}.${WKHTMLTOPDF_DISTRO}_${ARCH}.deb \
-    # cleanup + bench CLI
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -f /etc/nginx/sites-enabled/default \
-    && pip3 install frappe-bench \
-    && sed -i '/user www-data/d' /etc/nginx/nginx.conf \
-    && ln -sf /dev/stdout /var/log/nginx/access.log \
-    && ln -sf /dev/stderr /var/log/nginx/error.log \
-    && touch /run/nginx.pid \
-    && chown -R frappe:frappe /etc/nginx/conf.d /etc/nginx/nginx.conf /var/log/nginx /var/lib/nginx /run/nginx.pid \
-    && chmod 755 /usr/local/bin/nginx-entrypoint.sh \
-    && chmod 644 /templates/nginx/frappe.conf.template
+# Create frappe user and install system dependencies
+RUN useradd -ms /bin/bash frappe && \
+    apt-get update && \
+    apt-get install --no-install-recommends -y \
+        # Core utilities
+        wget curl git openssh-client procps nano vim nginx gettext-base file \
+        # Interactive utilities for debugging
+        tmux screen htop tree sudo \
+        # Python/Tkinter support
+        tk-dev python3-tk libtk8.6 tcl8.6-dev tk8.6-dev \
+        # Graphics libraries
+        libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libpangocairo-1.0-0 \
+        # Backup and database tools
+        restic gpg mariadb-client postgresql-client libpq-dev \
+        # Utilities
+        less wait-for-it jq && \
+    # Give frappe user sudo access for debugging
+    echo "frappe ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    # Install Node.js via NVM
+    mkdir -p ${NVM_DIR} && \
+    curl -sL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash && \
+    . ${NVM_DIR}/nvm.sh && \
+    nvm install ${NODE_VERSION} && \
+    nvm use v${NODE_VERSION} && \
+    npm install -g yarn && \
+    nvm alias default v${NODE_VERSION} && \
+    rm -rf ${NVM_DIR}/.cache && \
+    # Configure NVM for frappe user
+    echo 'export NVM_DIR="/home/frappe/.nvm"' >> /home/frappe/.bashrc && \
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /home/frappe/.bashrc && \
+    echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> /home/frappe/.bashrc && \
+    # Install wkhtmltopdf (architecture-aware)
+    if [ "$(uname -m)" = "aarch64" ]; then export ARCH=arm64; else export ARCH=amd64; fi && \
+    wget -q https://github.com/wkhtmltopdf/packaging/releases/download/${WKHTMLTOPDF_VERSION}/wkhtmltox_${WKHTMLTOPDF_VERSION}.${WKHTMLTOPDF_DISTRO}_${ARCH}.deb && \
+    apt-get install -y ./wkhtmltox_${WKHTMLTOPDF_VERSION}.${WKHTMLTOPDF_DISTRO}_${ARCH}.deb && \
+    rm wkhtmltox_${WKHTMLTOPDF_VERSION}.${WKHTMLTOPDF_DISTRO}_${ARCH}.deb && \
+    # Install Frappe Bench CLI
+    pip3 install frappe-bench && \
+    # Configure Nginx
+    rm -f /etc/nginx/sites-enabled/default && \
+    sed -i '/user www-data/d' /etc/nginx/nginx.conf && \
+    ln -sf /dev/stdout /var/log/nginx/access.log && \
+    ln -sf /dev/stderr /var/log/nginx/error.log && \
+    touch /run/nginx.pid && \
+    chown -R frappe:frappe /etc/nginx/conf.d /etc/nginx/nginx.conf /var/log/nginx /var/lib/nginx /run/nginx.pid && \
+    chmod 755 /usr/local/bin/nginx-entrypoint.sh && \
+    chmod 644 /templates/nginx/frappe.conf.template && \
+    # Cleanup
+    rm -rf /var/lib/apt/lists/*
 
-# ────────────────────────────────────────
-# Builder stage: bench init, get-app, new-site, install-app
-# ────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────────────────────
+# Stage 2: Builder - Application Setup & Build
+# ────────────────────────────────────────────────────────────────────────────────────────────
 FROM base AS builder
 
+# Re-declare ARGs needed in this stage
+ARG FRAPPE_VERSION
+ARG FRAPPE_PATH
+ARG ERPNEXT_VERSION
+ARG ERPNEXT_PATH
+ARG GITHUB_TOKEN
+ARG DEFAULT_VERSION
+
+# Copy apps configuration
 COPY overrides/apps.json /opt/frappe/apps.json
 
-# system deps for building Python and assets
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-       wget libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev \
-       libpq-dev libffi-dev liblcms2-dev libldap2-dev libmariadb-dev libsasl2-dev \
-       libtiff5-dev libwebp-dev pkg-config redis-tools rlwrap tk8.6-dev cron \
-       gcc build-essential libbz2-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+        # Build tools
+        gcc build-essential pkg-config \
+        # Graphics libraries for building
+        libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev \
+        libtiff5-dev libwebp-dev liblcms2-dev \
+        # Database libraries
+        libpq-dev libmariadb-dev \
+        # Additional libraries
+        libffi-dev libldap2-dev libsasl2-dev libbz2-dev \
+        # Utilities
+        redis-tools rlwrap cron && \
+    rm -rf /var/lib/apt/lists/*
 
+# Switch to frappe user for application setup
 USER frappe
+WORKDIR /home/frappe
 
-# Core build args
-ARG FRAPPE_BRANCH=version-15-development
-ARG FRAPPE_PATH=https://github.com/FxGroup/frappe.git
-
-# 1) Initialize bench with your Frappe fork
+# Initialize Frappe Bench with custom Frappe fork
 RUN bench init \
-      --frappe-branch=${FRAPPE_BRANCH} \
-      --frappe-path=${FRAPPE_PATH} \
-      --no-procfile \
-      --no-backups \
-      --skip-redis-config-generation \
-      --verbose \
-      /home/frappe/frappe-bench
-
-COPY overrides/common_site_config.json /home/frappe/frappe-bench/sites/common_site_config.json
-
-# 2) Clone ERPNext and your custom apps
-RUN cd /home/frappe/frappe-bench && \
-    bench get-app erpnext   https://github.com/FxGroup/erpnext.git   --branch version-15-development && \
-    bench get-app lms       https://github.com/frappe/lms.git        --branch develop
-
-ARG GITHUB_TOKEN
-RUN cd /home/frappe/frappe-bench && \
-    bench get-app hrms      https://${GITHUB_TOKEN}@github.com/FxGroup/hrms.git      --branch version-15-development && \ 
-    bench get-app FxNmRnTh  https://${GITHUB_TOKEN}@github.com/FxGroup/FxNmRnTh.git  --branch develop-v15 && \
-    bench get-app Australia https://${GITHUB_TOKEN}@github.com/FxGroup/Australia.git --branch develop-v15 && \
-    bench get-app NewZealand https://${GITHUB_TOKEN}@github.com/FxGroup/NewZealand.git --branch develop-v15 && \
-    bench get-app FX        https://${GITHUB_TOKEN}@github.com/FxGroup/FX.git        --branch develop-v15 && \
-    bench get-app RN        https://${GITHUB_TOKEN}@github.com/FxGroup/RN.git        --branch develop-v15 && \
-    bench get-app NM        https://${GITHUB_TOKEN}@github.com/FxGroup/NM.git        --branch develop-v15 && \
-    bench get-app Th        https://${GITHUB_TOKEN}@github.com/FxGroup/Th.git        --branch develop-v15
-
-
-# 3) Remove Git metadata to slim down the image
-RUN cd /home/frappe/frappe-bench && \
-    find apps -mindepth 1 -path "*/.git" | xargs rm -rf
-
-# ────────────────────────────────────────
-# Final runtime image
-# ────────────────────────────────────────
-FROM base AS backend
-
-USER frappe
-
-COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
+        --frappe-branch=${FRAPPE_VERSION} \
+        --frappe-path=${FRAPPE_PATH} \
+        --no-procfile \
+        --no-backups \
+        --skip-redis-config-generation \
+        --verbose \
+        /home/frappe/frappe-bench
 
 WORKDIR /home/frappe/frappe-bench
 
-VOLUME ["/home/frappe/frappe-bench/sites","/home/frappe/frappe-bench/sites/assets","/home/frappe/frappe-bench/logs"]
+# Install public applications
+RUN bench get-app erpnext ${ERPNEXT_PATH} --branch ${ERPNEXT_VERSION}
 
-CMD [ \
-  "/home/frappe/frappe-bench/env/bin/gunicorn", \
-  "--chdir=/home/frappe/frappe-bench/sites", \
-  "--bind=0.0.0.0:8000", \
-  "--threads=4", \
-  "--workers=2", \
-  "--worker-class=gthread", \
-  "--worker-tmp-dir=/dev/shm", \
-  "--timeout=120", \
-  "--preload", \
-  "frappe.app:application" \
-]
+# Install private FxGroup applications (requires GITHUB_TOKEN)
+RUN bench get-app hrms https://${GITHUB_TOKEN}@github.com/FxGroup/hrms.git --branch ${DEFAULT_VERSION} && \
+    bench get-app FxNmRnTh https://${GITHUB_TOKEN}@github.com/FxGroup/FxNmRnTh.git --branch ${DEFAULT_VERSION} && \
+    bench get-app Australia https://${GITHUB_TOKEN}@github.com/FxGroup/Australia.git --branch ${DEFAULT_VERSION} && \
+    bench get-app NewZealand https://${GITHUB_TOKEN}@github.com/FxGroup/NewZealand.git --branch ${DEFAULT_VERSION} && \
+    bench get-app FX https://${GITHUB_TOKEN}@github.com/FxGroup/FX.git --branch ${DEFAULT_VERSION} && \
+    bench get-app RN https://${GITHUB_TOKEN}@github.com/FxGroup/RN.git --branch ${DEFAULT_VERSION} && \
+    bench get-app NM https://${GITHUB_TOKEN}@github.com/FxGroup/NM.git --branch ${DEFAULT_VERSION} && \
+    bench get-app Th https://${GITHUB_TOKEN}@github.com/FxGroup/Th.git --branch ${DEFAULT_VERSION}
+
+# Build frontend assets for core applications
+RUN bench build --app frappe && \
+    bench build --app erpnext && \
+    bench build --app hrms
+
+# Clean up Git metadata to reduce image size
+RUN find apps -mindepth 1 -path "*/.git" | xargs rm -rf
+
+COPY overrides/pull-and-restore.sh /home/frappe/frappe-bench/pull-and-restore.sh
+
+# ────────────────────────────────────────────────────────────────────────────────────────────
+# Stage 3: Production Runtime Image with Interactive Support
+# ────────────────────────────────────────────────────────────────────────────────────────────
+FROM base AS backend
+
+# Switch to frappe user and copy built application
+USER frappe
+COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
+
+# Set working directory
+WORKDIR /home/frappe/frappe-bench
+
+# Create a startup script that can handle both interactive and production modes
+RUN echo '#!/bin/bash' > /home/frappe/startup.sh && \
+    echo 'set -e' >> /home/frappe/startup.sh && \
+    echo '' >> /home/frappe/startup.sh && \
+    echo '# Check if running in interactive mode' >> /home/frappe/startup.sh && \
+    echo 'if [ "$1" = "interactive" ] || [ "$1" = "bash" ]; then' >> /home/frappe/startup.sh && \
+    echo '    echo "Starting in interactive mode..."' >> /home/frappe/startup.sh && \
+    echo '    exec /bin/bash' >> /home/frappe/startup.sh && \
+    echo 'elif [ "$1" = "bench" ]; then' >> /home/frappe/startup.sh && \
+    echo '    shift' >> /home/frappe/startup.sh && \
+    echo '    exec bench "$@"' >> /home/frappe/startup.sh && \
+    echo 'else' >> /home/frappe/startup.sh && \
+    echo '    # Production mode - start gunicorn' >> /home/frappe/startup.sh && \
+    echo '    exec /home/frappe/frappe-bench/env/bin/gunicorn \\' >> /home/frappe/startup.sh && \
+    echo '         --chdir=/home/frappe/frappe-bench/sites \\' >> /home/frappe/startup.sh && \
+    echo '         --bind=0.0.0.0:8000 \\' >> /home/frappe/startup.sh && \
+    echo '         --threads=4 \\' >> /home/frappe/startup.sh && \
+    echo '         --workers=2 \\' >> /home/frappe/startup.sh && \
+    echo '         --worker-class=gthread \\' >> /home/frappe/startup.sh && \
+    echo '         --worker-tmp-dir=/dev/shm \\' >> /home/frappe/startup.sh && \
+    echo '         --timeout=120 \\' >> /home/frappe/startup.sh && \
+    echo '         --preload \\' >> /home/frappe/startup.sh && \
+    echo '         frappe.app:application' >> /home/frappe/startup.sh && \
+    echo 'fi' >> /home/frappe/startup.sh && \
+    chmod +x /home/frappe/startup.sh
+
+# Define volumes for persistent data
+VOLUME ["/home/frappe/frappe-bench/sites", "/home/frappe/frappe-bench/sites/assets", "/home/frappe/frappe-bench/logs"]
+
+# Use the startup script as entrypoint
+ENTRYPOINT ["/home/frappe/startup.sh"]
+
+# Default command: Start in production mode
+CMD []

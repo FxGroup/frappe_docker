@@ -10,6 +10,8 @@ development/*
 !development/apps-example.json
 !development/vscode-example/
 
+overrides/temp_backups/*
+
 # Pycharm
 .idea
 
